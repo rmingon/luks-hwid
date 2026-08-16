@@ -1,0 +1,52 @@
+#!/bin/sh
+# Hook initramfs-tools : embarque le binaire luks-hwid dans l'initramfs.
+#
+# Installation :
+#   install -m 0755 luks-hwid /usr/sbin/luks-hwid          (binaire musl statique)
+#   install -m 0755 ce_fichier /etc/initramfs-tools/hooks/luks-hwid
+#   update-initramfs -u
+#
+# crypttab (le keyscript est aussi copié automatiquement par
+# cryptsetup-initramfs, ce hook est une ceinture de sécurité) :
+#   cr_root UUID=... none luks,keyscript=/usr/sbin/luks-hwid
+# ou en header détaché :
+#   cr_root /dev/sda2 none luks,keyscript=/usr/sbin/luks-hwid,header=/luks-hwid/header.img
+
+PREREQ="cryptroot"
+
+prereqs() {
+    echo "$PREREQ"
+}
+
+case "$1" in
+    prereqs)
+        prereqs
+        exit 0
+        ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+BIN=""
+for candidate in /usr/sbin/luks-hwid /usr/local/sbin/luks-hwid /usr/bin/luks-hwid; do
+    if [ -x "$candidate" ]; then
+        BIN="$candidate"
+        break
+    fi
+done
+
+if [ -z "$BIN" ]; then
+    echo "luks-hwid: binaire introuvable, hook ignoré" >&2
+    exit 0
+fi
+
+# Binaire statique : copy_exec n'embarquera aucune bibliothèque.
+copy_exec "$BIN" /usr/sbin/luks-hwid
+
+# Le ré-enrôlement au boot passe par le binaire cryptsetup, normalement
+# déjà présent via cryptsetup-initramfs. On s'en assure.
+if [ -x /sbin/cryptsetup ] && [ ! -e "${DESTDIR}/sbin/cryptsetup" ]; then
+    copy_exec /sbin/cryptsetup /sbin/cryptsetup
+fi
+
+exit 0
